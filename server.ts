@@ -1,0 +1,198 @@
+import express from "express";
+import { createServer as createViteServer } from "vite";
+import Database from "better-sqlite3";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+import dotenv from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
+import crypto from "crypto";
+
+dotenv.config();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const app = express();
+const PORT = 3000;
+const JWT_SECRET = process.env.JWT_SECRET || "metabolic-secret-key-2026";
+
+// Database setup
+const DB_PATH = process.env.DATABASE_PATH || "metabolic.db";
+const db = new Database(DB_PATH);
+db.pragma('foreign_keys = ON');
+
+// Initialize tables
+db.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    email TEXT UNIQUE,
+    password TEXT,
+    age INTEGER,
+    gender TEXT,
+    height REAL,
+    weight REAL,
+    activity_level TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS measurements (
+    id TEXT PRIMARY KEY,
+    user_id TEXT,
+    date TEXT,
+    weight REAL,
+    bmi REAL,
+    bmr REAL,
+    tdee REAL,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+`);
+
+app.use(express.json());
+
+// Auth Middleware
+const authenticateToken = (req: any, res: any, next: any) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) return res.sendStatus(401);
+
+  jwt.verify(token, JWT_SECRET, (err: any, user: any) => {
+    if (err) return res.sendStatus(403);
+    
+    // Verify user still exists in DB
+    const userExists = db.prepare("SELECT id FROM users WHERE id = ?").get(user.id);
+    if (!userExists) {
+      return res.status(401).json({ error: "User no longer exists" });
+    }
+    
+    req.user = user;
+    next();
+  });
+};
+
+// --- API Routes ---
+
+// Register
+app.post("/api/auth/register", async (req, res) => {
+  const { email, password, age, gender, height, weight, activityLevel } = req.body;
+  
+  try {
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const userId = crypto.randomUUID();
+    
+    const insert = db.prepare(`
+      INSERT INTO users (id, email, password, age, gender, height, weight, activity_level)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    
+    insert.run(userId, email, hashedPassword, age, gender, height, weight, activityLevel);
+    
+    const token = jwt.sign({ id: userId, email }, JWT_SECRET);
+    res.json({ token, user: { id: userId, email, age, gender, height, weight, activityLevel } });
+  } catch (error) {
+    console.error(error);
+    res.status(400).json({ error: "Email already exists or invalid data" });
+  }
+});
+
+// Login
+app.post("/api/auth/login", async (req, res) => {
+  const { email, password } = req.body;
+  
+  const user = db.prepare("SELECT * FROM users WHERE email = ?").get(email) as any;
+  
+  if (!user || !(await bcrypt.compare(password, user.password))) {
+    return res.status(401).json({ error: "Invalid credentials" });
+  }
+  
+  const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET);
+  res.json({ 
+    token, 
+    user: { 
+      id: user.id, 
+      email: user.email, 
+      age: user.age, 
+      gender: user.gender, 
+      height: user.height, 
+      weight: user.weight, 
+      activityLevel: user.activity_level 
+    } 
+  });
+});
+
+// Get Profile
+app.get("/api/profile", authenticateToken, (req: any, res) => {
+  const user = db.prepare("SELECT id, email, age, gender, height, weight, activity_level as activityLevel FROM users WHERE id = ?").get(req.user.id);
+  if (!user) {
+    return res.status(404).json({ error: "User not found" });
+  }
+  res.json(user);
+});
+
+// Update Profile
+app.put("/api/profile", authenticateToken, (req: any, res) => {
+  const { age, gender, height, weight, activityLevel } = req.body;
+  db.prepare(`
+    UPDATE users 
+    SET age = ?, gender = ?, height = ?, weight = ?, activity_level = ?
+    WHERE id = ?
+  `).run(age, gender, height, weight, activityLevel, req.user.id);
+  res.json({ success: true });
+});
+
+// Get Measurements
+app.get("/api/measurements", authenticateToken, (req: any, res) => {
+  const measurements = db.prepare("SELECT * FROM measurements WHERE user_id = ? ORDER BY date DESC").all(req.user.id);
+  res.json(measurements);
+});
+
+// Add Measurement
+app.post("/api/measurements", authenticateToken, (req: any, res) => {
+  const { weight, bmi, bmr, tdee } = req.body;
+  const id = crypto.randomUUID();
+  const date = new Date().toISOString();
+  
+  db.prepare(`
+    INSERT INTO measurements (id, user_id, date, weight, bmi, bmr, tdee)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(id, req.user.id, date, weight, bmi, bmr, tdee);
+  
+  // Also update current weight in profile
+  db.prepare("UPDATE users SET weight = ? WHERE id = ?").run(weight, req.user.id);
+  
+  res.json({ id, date, weight, bmi, bmr, tdee });
+});
+
+// Delete Measurement
+app.delete("/api/measurements/:id", authenticateToken, (req: any, res) => {
+  db.prepare("DELETE FROM measurements WHERE id = ? AND user_id = ?").run(req.params.id, req.user.id);
+  res.json({ success: true });
+});
+
+// Clear History
+app.delete("/api/measurements", authenticateToken, (req: any, res) => {
+  db.prepare("DELETE FROM measurements WHERE user_id = ?").run(req.user.id);
+  res.json({ success: true });
+});
+
+// --- Vite Middleware ---
+async function startServer() {
+  if (process.env.NODE_ENV !== "production") {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else {
+    app.use(express.static(path.join(__dirname, "dist")));
+    app.get("*", (req, res) => {
+      res.sendFile(path.join(__dirname, "dist", "index.html"));
+    });
+  }
+
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+  });
+}
+
+startServer();
