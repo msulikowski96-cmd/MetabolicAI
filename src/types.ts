@@ -13,11 +13,14 @@ export type ActivityLevel =
   | 'extra_active';
 
 export interface UserProfile {
+  id?: string;
+  email?: string;
   age: number;
   gender: Gender;
   height: number; // in cm
   weight: number; // in kg
   activityLevel: ActivityLevel;
+  targetWeight?: number; // in kg
 }
 
 export interface Measurement {

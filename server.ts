@@ -32,7 +32,8 @@ db.exec(`
     gender TEXT,
     height REAL,
     weight REAL,
-    activity_level TEXT
+    activity_level TEXT,
+    target_weight REAL
   );
 
   CREATE TABLE IF NOT EXISTS measurements (
@@ -46,6 +47,18 @@ db.exec(`
     FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
   );
 `);
+
+// Migration: Add target_weight to users if it doesn't exist
+try {
+  const tableInfo = db.prepare("PRAGMA table_info(users)").all() as any[];
+  const hasTargetWeight = tableInfo.some(col => col.name === 'target_weight');
+  if (!hasTargetWeight) {
+    db.exec("ALTER TABLE users ADD COLUMN target_weight REAL");
+    console.log("Migration: Added target_weight column to users table");
+  }
+} catch (error) {
+  console.error("Migration error:", error);
+}
 
 app.use(express.json());
 
@@ -74,21 +87,21 @@ const authenticateToken = (req: any, res: any, next: any) => {
 
 // Register
 app.post("/api/auth/register", async (req, res) => {
-  const { email, password, age, gender, height, weight, activityLevel } = req.body;
+  const { email, password, age, gender, height, weight, activityLevel, targetWeight } = req.body;
   
   try {
     const hashedPassword = await bcrypt.hash(password, 10);
     const userId = crypto.randomUUID();
     
     const insert = db.prepare(`
-      INSERT INTO users (id, email, password, age, gender, height, weight, activity_level)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO users (id, email, password, age, gender, height, weight, activity_level, target_weight)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     
-    insert.run(userId, email, hashedPassword, age, gender, height, weight, activityLevel);
+    insert.run(userId, email, hashedPassword, age, gender, height, weight, activityLevel, targetWeight || null);
     
     const token = jwt.sign({ id: userId, email }, JWT_SECRET);
-    res.json({ token, user: { id: userId, email, age, gender, height, weight, activityLevel } });
+    res.json({ token, user: { id: userId, email, age, gender, height, weight, activityLevel, targetWeight } });
   } catch (error) {
     console.error(error);
     res.status(400).json({ error: "Email already exists or invalid data" });
@@ -115,14 +128,15 @@ app.post("/api/auth/login", async (req, res) => {
       gender: user.gender, 
       height: user.height, 
       weight: user.weight, 
-      activityLevel: user.activity_level 
+      activityLevel: user.activity_level,
+      targetWeight: user.target_weight
     } 
   });
 });
 
 // Get Profile
 app.get("/api/profile", authenticateToken, (req: any, res) => {
-  const user = db.prepare("SELECT id, email, age, gender, height, weight, activity_level as activityLevel FROM users WHERE id = ?").get(req.user.id);
+  const user = db.prepare("SELECT id, email, age, gender, height, weight, activity_level as activityLevel, target_weight as targetWeight FROM users WHERE id = ?").get(req.user.id);
   if (!user) {
     return res.status(404).json({ error: "User not found" });
   }
@@ -131,12 +145,12 @@ app.get("/api/profile", authenticateToken, (req: any, res) => {
 
 // Update Profile
 app.put("/api/profile", authenticateToken, (req: any, res) => {
-  const { age, gender, height, weight, activityLevel } = req.body;
+  const { age, gender, height, weight, activityLevel, targetWeight } = req.body;
   db.prepare(`
     UPDATE users 
-    SET age = ?, gender = ?, height = ?, weight = ?, activity_level = ?
+    SET age = ?, gender = ?, height = ?, weight = ?, activity_level = ?, target_weight = ?
     WHERE id = ?
-  `).run(age, gender, height, weight, activityLevel, req.user.id);
+  `).run(age, gender, height, weight, activityLevel, targetWeight || null, req.user.id);
   res.json({ success: true });
 });
 
