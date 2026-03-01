@@ -7,6 +7,7 @@ import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
 import crypto from "crypto";
+import fs from "fs";
 
 dotenv.config();
 
@@ -19,6 +20,13 @@ const JWT_SECRET = process.env.JWT_SECRET || "metabolic-secret-key-2026";
 
 // Database setup
 const DB_PATH = process.env.DATABASE_PATH || "metabolic.db";
+
+// Ensure database directory exists
+const dbDir = path.dirname(DB_PATH);
+if (dbDir !== "." && !fs.existsSync(dbDir)) {
+  fs.mkdirSync(dbDir, { recursive: true });
+}
+
 const db = new Database(DB_PATH);
 db.pragma('foreign_keys = ON');
 
