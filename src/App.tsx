@@ -24,9 +24,11 @@ import {
   ArrowUp,
   ArrowDown,
   Target,
-  Calendar
+  Calendar,
+  Sparkles
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import DemoTab from './components/DemoTab';
 import { 
   LineChart, 
   Line, 
@@ -66,7 +68,7 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-type Tab = 'dashboard' | 'calculator' | 'history' | 'settings';
+type Tab = 'dashboard' | 'calculator' | 'history' | 'settings' | 'demo';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
@@ -450,6 +452,13 @@ export default function App() {
             onClick={() => setActiveTab('settings')}
             icon={<SettingsIcon size={18} />}
             label="Profil"
+            collapsed={isSidebarCollapsed}
+          />
+          <NavButton 
+            active={activeTab === 'demo'} 
+            onClick={() => setActiveTab('demo')}
+            icon={<Sparkles size={18} />}
+            label="Demo"
             collapsed={isSidebarCollapsed}
           />
         </div>
@@ -1128,6 +1137,18 @@ export default function App() {
                   </div>
                 </div>
               </div>
+            </motion.div>
+          )}
+
+          {activeTab === 'demo' && (
+            <motion.div
+              key="demo"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="h-full"
+            >
+              <DemoTab />
             </motion.div>
           )}
         </AnimatePresence>
