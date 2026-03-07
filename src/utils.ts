@@ -1,4 +1,9 @@
-import { UserProfile, ACTIVITY_MULTIPLIERS } from '../types';
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import { UserProfile, ACTIVITY_MULTIPLIERS } from './types';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 

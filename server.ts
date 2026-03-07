@@ -1,4 +1,5 @@
 import express from "express";
+import { createServer as createViteServer } from "vite";
 import pg from "pg";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
@@ -304,11 +305,35 @@ app.delete("/api/meals/:id", authenticateToken, async (req: any, res) => {
   }
 });
 
-// --- API Server ---
+// --- Vite Middleware ---
 async function startServer() {
-  app.get("/", (req, res) => {
-    res.send("<h1>MetabolicAI Pro API Server</h1><p>Use Expo Go to connect to this backend.</p>");
-  });
+  const distPath = path.join(__dirname, "dist");
+  const indexHtmlPath = path.join(distPath, "index.html");
+  
+  // Determine if we should run in production mode
+  // We only run in production if NODE_ENV is production AND the build artifacts exist
+  let isProduction = process.env.NODE_ENV === "production";
+  
+  if (isProduction && (!fs.existsSync(distPath) || !fs.existsSync(indexHtmlPath))) {
+    console.warn("⚠️  NODE_ENV is 'production' but 'dist/index.html' is missing.");
+    console.warn("⚠️  Falling back to development mode (Vite middleware).");
+    isProduction = false;
+  }
+
+  if (!isProduction) {
+    console.log("🚀 Starting in Development Mode");
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else {
+    console.log("🚀 Starting in Production Mode");
+    app.use(express.static(distPath));
+    app.get("*", (req, res) => {
+      res.sendFile(indexHtmlPath);
+    });
+  }
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
