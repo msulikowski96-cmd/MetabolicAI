@@ -1,9 +1,10 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
+import { UserProfile, ACTIVITY_MULTIPLIERS } from '../types';
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
 
-import { UserProfile, ACTIVITY_MULTIPLIERS } from './types';
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
 
 export function calculateBMI(weight: number, height: number): number {
   const heightInMeters = height / 100;
